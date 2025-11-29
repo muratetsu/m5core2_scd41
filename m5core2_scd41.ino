@@ -256,9 +256,6 @@ void setup() {
   // M5.Lcd.drawString("Humid", 280, 208, 2);
   M5.Display.drawString("%", 280, 220, 2);
   graph.begin(GRAPH_WIDTH, GRAPH_HIGHT, GRAPH_XMIN, GRAPH_YMIN, GRAPH_YGRID, COLOR_CO2, COLOR_TEMP, COLOR_HUMID);
-  
-  // Wakeup用の1sタイマ
-  esp_sleep_enable_timer_wakeup(1000000);
 }
 
 /**
@@ -331,6 +328,6 @@ void loop() {
     battery.showBatteryCapacity();
   }
 
-  // light sleep (TODO: 5M.PowerのtimerSleep/lightSleep/deepSleepに置き換え可能か検討)
-  esp_light_sleep_start();
+  // light sleep
+  M5.Power.lightSleep(1000000);
 }
