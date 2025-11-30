@@ -15,6 +15,7 @@
 #include <SensirionI2CScd4x.h>
 #include <Wire.h>
 #include <WiFi.h>
+#include <SD.h>
 #include "esp_sntp.h"
 #include "Battery.h"
 #include "Graph.h"
@@ -224,6 +225,22 @@ void openingSound(void) {
 }
 
 /**
+ * @brief SDカードにログを保存する
+ */
+void logging(char *filename, m5::rtc_datetime_t RTCdata, uint16_t co2, float temperature, float humidity) {
+  File file = SD.open(filename, FILE_APPEND);
+  if (file) {
+    file.printf("%04d/%02d/%02d %02d:%02d:%02d,%d,%.1f,%.0f\r\n",
+                RTCdata.date.year, RTCdata.date.month, RTCdata.date.date,
+                RTCdata.time.hours, RTCdata.time.minutes, RTCdata.time.seconds,
+                co2, temperature, humidity);
+    file.close();
+  } else {
+    M5.Display.println("Failed to open log file.");
+  }
+}
+
+/**
  * @brief Arduino setup
  */
 void setup() {
@@ -232,6 +249,12 @@ void setup() {
   cfg.internal_imu = false;
   cfg.internal_mic = false;
   M5.begin(cfg);
+  
+  // Initialize SD card
+  while (!SD.begin(GPIO_NUM_4, SPI, 25000000)) {
+    M5.Display.println("SD Card Mount Failed");
+    delay(1000);
+  }
   M5.Display.setTextFont(4);
   M5.Display.println("Sensirion SCD41");
   M5.Display.setCursor(0, 40, 2);
@@ -314,7 +337,7 @@ void loop() {
       }
 
       sprintf(strBuf, "/%d-%02d-%02d.csv", RTCdata.date.year, RTCdata.date.month, RTCdata.date.date);
-      // logging(strBuf, RTCdate, RTCtime, co2, temperature, humidity);
+      logging(strBuf, RTCdata, co2, temperature, humidity);
 
       co2Sum = 0;
       tempSum = 0;

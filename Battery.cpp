@@ -36,11 +36,19 @@ bool Battery::updatePowerState() {
   static bool toggle = false;
   bool lcdUpdateRequired = false;
 
+  float vbus = M5.Power.getVBUSVoltage();
+  bool isCharging = M5.Power.isCharging();
+  bool isACIN = M5.Power.Axp192.isACIN();
+  
+  // VBUS接続判定: 新モデル(VBUS電圧) or 旧モデル(AXP192 ACIN)
+  bool isVbusConnected = (vbus > VBUS_THRESHOLD) || isACIN;
+
+  // デバッグ表示: カウンタ, 電圧, 充電フラグ, ACIN
   // M5.Display.setCursor(0, 28, 2);
-  // M5.Display.printf("%d: %d mV     ", _displayOffCnt, M5.Power.getVBUSVoltage());
+  // M5.Display.printf("%d: V:%.0f C:%d A:%d   ", _displayOffCnt, vbus, isCharging, isACIN);
 
   // USBの挿抜に伴う処理
-  if (M5.Power.getVBUSVoltage() > VBUS_THRESHOLD) {
+  if (isVbusConnected) {
     if (_pwrMode != PWR_VBUS) {
       _pwrMode = PWR_VBUS;
       if (!lcdOn) {
@@ -49,8 +57,9 @@ bool Battery::updatePowerState() {
       }
       // M5.Display.setBrightness(255);        
       M5.Power.setLed(true);
+      _displayOffCnt = DISPLAY_OFF_TM;
     }
-    if (M5.Power.isCharging()) {
+    if (isCharging) {
       toggle ^= true;
       M5.Power.setLed(toggle);
     } 
