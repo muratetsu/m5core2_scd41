@@ -14,6 +14,7 @@ class Battery {
     void begin(int32_t posX, int32_t posY);
     bool updatePowerState();
     void showBatteryCapacity();
+    bool isVbusConnected();
     bool lcdOn;
 
     private:

@@ -36,12 +36,10 @@ bool Battery::updatePowerState() {
   static bool toggle = false;
   bool lcdUpdateRequired = false;
 
-  float vbus = M5.Power.getVBUSVoltage();
   bool isCharging = M5.Power.isCharging();
-  bool isACIN = M5.Power.Axp192.isACIN();
   
-  // VBUS接続判定: 新モデル(VBUS電圧) or 旧モデル(AXP192 ACIN)
-  bool isVbusConnected = (vbus > VBUS_THRESHOLD) || isACIN;
+  // VBUS接続判定
+  bool isVbusConnected = this->isVbusConnected();
 
   // デバッグ表示: カウンタ, 電圧, 充電フラグ, ACIN
   // M5.Display.setCursor(0, 28, 2);
@@ -91,6 +89,15 @@ bool Battery::updatePowerState() {
   }
 
   return lcdUpdateRequired;
+}
+
+/**
+ * @brief Check if VBUS is connected
+ */
+bool Battery::isVbusConnected() {
+  float vbus = M5.Power.getVBUSVoltage();
+  bool isACIN = M5.Power.Axp192.isACIN();
+  return (vbus > VBUS_THRESHOLD) || isACIN;
 }
 
 /**

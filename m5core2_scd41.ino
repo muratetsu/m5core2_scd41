@@ -12,7 +12,7 @@
 
 #include <Arduino.h>
 #include <M5Unified.h>
-#include <SensirionI2CScd4x.h>
+#include <SensirionI2cScd4x.h>
 #include <Wire.h>
 #include <WiFi.h>
 #include <SD.h>
@@ -28,9 +28,10 @@
 #define GRAPH_YMIN  38
 #define GRAPH_YGRID 20
 
-SensirionI2CScd4x scd4x;
+SensirionI2cScd4x scd4x;
 Battery battery;
 Graph graph;
+time_t lastNtpSyncTime = 0;
 
 const char WEEKDAY[7][4] = {"Sun", "Mon", "Tue", "Wed", "Thr", "Fri", "Sat"};
 const char MONTH[12][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -39,25 +40,15 @@ const char MONTH[12][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug
 #define COLOR_CO2   (uint32_t)0x99ff99
 #define COLOR_TEMP  (uint32_t)0xff9999
 #define COLOR_HUMID (uint32_t)0x9999ff
-
-/**
- * @brief Print 16-bit unsigned number in Hex
- */
-void printUint16Hex(uint16_t value) {
-  M5.Display.print(value < 4096 ? "0" : "");
-  M5.Display.print(value < 256 ? "0" : "");
-  M5.Display.print(value < 16 ? "0" : "");
-  M5.Display.print(value, HEX);
-}
+#define NTP_SYNC_INTERVAL (24 * 60 * 60) // NTP同期の間隔(秒)
 
 /**
  * @brief Print SCD4x serial number
  */
-void printSerialNumber(uint16_t serial0, uint16_t serial1, uint16_t serial2) {
+void printSerialNumber(uint64_t serialNumber) {
   M5.Display.print("Serial: 0x");
-  printUint16Hex(serial0);
-  printUint16Hex(serial1);
-  printUint16Hex(serial2);
+  M5.Display.print((uint32_t)(serialNumber >> 32), HEX);
+  M5.Display.print((uint32_t)(serialNumber & 0xFFFFFFFF), HEX);
   M5.Display.println();
 }
 
@@ -65,13 +56,19 @@ void printSerialNumber(uint16_t serial0, uint16_t serial1, uint16_t serial2) {
  * @brief Initialize and start SCD4x measurement
  */
  void scd4xInit(void) {
-  uint16_t error;
+  int16_t error;
   char errorMessage[256];
-  uint16_t serial0;
-  uint16_t serial1;
-  uint16_t serial2;
+  uint64_t serialNumber;
 
-  scd4x.begin(Wire1);
+  scd4x.begin(Wire1, SCD41_I2C_ADDR_62);
+
+  // Ensure sensor is in clean state
+  error = scd4x.wakeUp();
+  if (error) {
+    M5.Display.print("Error trying to execute wakeUp(): ");
+    errorToString(error, errorMessage, 256);
+    M5.Display.println(errorMessage);
+  }
 
   // stop potentially previously started measurement
   error = scd4x.stopPeriodicMeasurement();
@@ -81,13 +78,20 @@ void printSerialNumber(uint16_t serial0, uint16_t serial1, uint16_t serial2) {
     M5.Display.println(errorMessage);
   }
 
-  error = scd4x.getSerialNumber(serial0, serial1, serial2);
+  error = scd4x.reinit();
+  if (error) {
+    M5.Display.print("Error trying to execute reinit(): ");
+    errorToString(error, errorMessage, 256);
+    M5.Display.println(errorMessage);
+  }
+
+  error = scd4x.getSerialNumber(serialNumber);
   if (error) {
     M5.Display.print("Error trying to execute getSerialNumber(): ");
     errorToString(error, errorMessage, 256);
     M5.Display.println(errorMessage);
   } else {
-    printSerialNumber(serial0, serial1, serial2);
+    printSerialNumber(serialNumber);
   }
 
   // Start Measurement
@@ -137,13 +141,19 @@ void updateMeasurement(uint16_t co2, float temperature, float humidity) {
 /**
  * @brief NTPを使った時刻補正
  */
-void setupTime() {
+bool setupTime() {
   struct tm timeInfo;
   m5::rtc_datetime_t rtcData;
+  uint32_t startMs = millis();
+  const uint32_t timeoutMs = 20000;
 
   configTzTime("JST-9", "ntp.nict.jp", "ntp.jst.mfeed.ad.jp");
 
   while (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED) {
+    if (millis() - startMs > timeoutMs) {
+      M5.Display.println("\nNTP Sync Timeout");
+      return false;
+    }
     M5.Display.print(".");
     delay(500);
   }
@@ -165,12 +175,15 @@ void setupTime() {
     M5.Display.printf("%04d/%02d/%02d %02d:%02d:%02d",
       rtcData.date.year, rtcData.date.month, rtcData.date.date,
       rtcData.time.hours, rtcData.time.minutes, rtcData.time.seconds);
+    
+    delay(1000);
+    return true;
   }
   else {
     M5.Display.println("Failed to get NTP time");
+    delay(1000);
+    return false;
   }
-
-  delay(1000);
 }
 
 /**
@@ -197,7 +210,9 @@ void wifiConnection() {
 
     // setup time
     M5.Display.println("Setup time");
-    setupTime();
+    if (setupTime()) {
+      lastNtpSyncTime = time(NULL);
+    }
 
     WiFi.disconnect(true);
   }
@@ -290,10 +305,11 @@ void loop() {
   static float tempSum = 0;
   static float humidSum = 0;
   static int numSum = 0;
+  static bool wasVbusConnected = false;
   uint16_t co2;
   float temperature;
   float humidity;
-  uint16_t error;
+  int16_t error;
   char strBuf[256];
   m5::rtc_datetime_t RTCdata;
   
@@ -304,11 +320,12 @@ void loop() {
     // Read Measurement
     error = scd4x.readMeasurement(co2, temperature, humidity);
     if (error) {
-      M5.Display.setCursor(0, 120, 2);
-      M5.Display.print("Error trying to execute readMeasurement(): ");
+      M5.Display.setCursor(0, 20, 2);
+      M5.Display.print("Error: ");
       errorToString(error, strBuf, 256);
       M5.Display.println(strBuf);
     } else if (co2 == 0) {
+      M5.Display.setCursor(0, 20, 2);
       M5.Display.println("Invalid sample detected, skipping.");
     } else {
       updateMeasurement(co2, temperature, humidity);
@@ -350,6 +367,15 @@ void loop() {
     graph.plot(RTCdata, 7);
     battery.showBatteryCapacity();
   }
+
+  // VBUSが未接続から接続状態に変化 かつ 前回の実行から24時間経過している場合のみ実行
+  time_t now = time(NULL);
+  bool isVbusConnected = battery.isVbusConnected();
+  if (isVbusConnected && !wasVbusConnected && (now - lastNtpSyncTime >= NTP_SYNC_INTERVAL)) {
+    M5.Display.setCursor(0, 20, 2);
+    wifiConnection();
+  }
+  wasVbusConnected = isVbusConnected;
 
   // light sleep
   M5.Power.lightSleep(1000000);
