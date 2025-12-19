@@ -22,7 +22,7 @@ M5Stack Core2 と Sensirion SCD41 センサーユニットを使用した、CO2�
 
 *   **M5Unified**
 *   **M5GFX**
-*   **Sensirion I2C SCD4x**
+*   **Sensirion I2C SCD4 1.1.0 x**
 
 ## セットアップ方法
 

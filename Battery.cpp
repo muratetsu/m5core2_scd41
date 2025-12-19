@@ -109,8 +109,7 @@ void Battery::wakeupLcd() {
   if (!lcdOn) {
     // Turn LCD backlight on
     M5.Display.wakeup();
-    // M5.Display.powerSaveOn();
-    M5.Display.setBrightness(255);        
+    M5.Display.setBrightness(128);        
     lcdOn = true;
   }
 }
@@ -122,7 +121,6 @@ void Battery::sleepLcd() {
   if (lcdOn) {
     // Turn LCD backlight off
     M5.Display.sleep();
-    // M5.Display.powerSaveOff(); // これをするとなぜかそれ以降カラー表示ができなくなる
     lcdOn = false;
   }
 }
