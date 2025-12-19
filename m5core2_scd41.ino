@@ -6,6 +6,7 @@
 // Library:
 //   M5GFX 0.2.15
 //   M5Unified 0.2.10
+//   Sensirion I2C SCD4x 1.1.0
 //
 // October 24, 2025
 // Tetsu Nishimura
@@ -32,6 +33,13 @@ SensirionI2cScd4x scd4x;
 Battery battery;
 Graph graph;
 time_t lastNtpSyncTime = 0;
+
+// Variables for accumulation and state tracking
+int co2Sum = 0;
+float tempSum = 0;
+float humidSum = 0;
+int numSum = 0;
+bool wasVbusConnected = false;
 
 const char WEEKDAY[7][4] = {"Sun", "Mon", "Tue", "Wed", "Thr", "Fri", "Sat"};
 const char MONTH[12][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
@@ -256,6 +264,32 @@ void logging(char *filename, m5::rtc_datetime_t RTCdata, uint16_t co2, float tem
 }
 
 /**
+ * @brief 状態表示
+ */
+void showStatus(char *str, uint16_t scd4xError) {
+  char strBuf[256];
+
+  clearStatus();
+
+  M5.Display.setCursor(0, 22, 2);
+  M5.Display.setTextColor(TFT_RED);
+  M5.Display.print(str);
+
+  if (scd4xError) {
+    errorToString(scd4xError, strBuf, 256);
+    M5.Display.print(strBuf);
+  }
+}
+
+/**
+ * @brief 状態表示を消去
+ */
+void clearStatus() {
+  M5.Display.setCursor(0, 22, 2);
+  M5.Display.print("                                      ");
+}
+
+/**
  * @brief Arduino setup
  */
 void setup() {
@@ -284,49 +318,37 @@ void setup() {
   M5.Display.clear();
 
   M5.Display.setTextColor(COLOR_CO2);
-  // M5.Lcd.drawString("CO2", 80, 208, 2);
   M5.Display.drawString("ppm", 80, 220, 2);
   M5.Display.setTextColor(COLOR_TEMP);
-  // M5.Lcd.drawString("Temp", 190, 208, 2);
   M5.Display.drawCircle(190, 220, 2, COLOR_TEMP);
   M5.Display.drawString("C", 193, 220, 2);
   M5.Display.setTextColor(COLOR_HUMID);
-  // M5.Lcd.drawString("Humid", 280, 208, 2);
   M5.Display.drawString("%", 280, 220, 2);
   graph.begin(GRAPH_WIDTH, GRAPH_HIGHT, GRAPH_XMIN, GRAPH_YMIN, GRAPH_YGRID, COLOR_CO2, COLOR_TEMP, COLOR_HUMID);
 }
 
 /**
- * @brief Arduino loop
+ * @brief センサーデータの取得と蓄積 (5秒毎)
  */
-void loop() {
-  static int prevMinute = 0;
-  static int co2Sum = 0;
-  static float tempSum = 0;
-  static float humidSum = 0;
-  static int numSum = 0;
-  static bool wasVbusConnected = false;
-  uint16_t co2;
-  float temperature;
-  float humidity;
-  int16_t error;
-  char strBuf[256];
-  m5::rtc_datetime_t RTCdata;
-  
-  RTCdata = M5.Rtc.getDateTime();
+void processSensorData(m5::rtc_datetime_t &rtcData) {
+  static int prevSecond = 0;
 
-  // 5秒ごとに測定を実施
-  if (RTCdata.time.seconds % 5 == 0) {
+  if ((rtcData.time.seconds - prevSecond + 60) % 60 >= 5) {
+    prevSecond = rtcData.time.seconds;
+    uint16_t co2;
+    float temperature;
+    float humidity;
+    int16_t error;
+    char strBuf[256];
+
+    clearStatus();
+
     // Read Measurement
     error = scd4x.readMeasurement(co2, temperature, humidity);
     if (error) {
-      M5.Display.setCursor(0, 20, 2);
-      M5.Display.print("Error: ");
-      errorToString(error, strBuf, 256);
-      M5.Display.println(strBuf);
+      showStatus("Error: ", error);
     } else if (co2 == 0) {
-      M5.Display.setCursor(0, 20, 2);
-      M5.Display.println("Invalid sample detected, skipping.");
+      showStatus("Invalid sample detected", 0);
     } else {
       updateMeasurement(co2, temperature, humidity);
 
@@ -336,25 +358,33 @@ void loop() {
       numSum++;
     }
   }
+}
 
-  //  1分ごとにグラフを更新
-  if (prevMinute != RTCdata.time.minutes) {
-    prevMinute = RTCdata.time.minutes;
-    updateTime(RTCdata);
+/**
+ * @brief 定期的な更新処理 (1分毎)
+ * グラフ更新、ログ保存、平均値計算
+ */
+void processMinuteUpdate(m5::rtc_datetime_t &rtcData) {
+  static int prevMinute = 0;
+
+  if (prevMinute != rtcData.time.minutes) {
+    prevMinute = rtcData.time.minutes;
+    updateTime(rtcData);
 
     if (numSum != 0) {
-      co2 = co2Sum / numSum;
-      temperature = tempSum / numSum;
-      humidity = humidSum / numSum;
+      uint16_t co2 = co2Sum / numSum;
+      float temperature = tempSum / numSum;
+      float humidity = humidSum / numSum;
+      char strBuf[256];
 
       graph.add(co2, temperature, humidity);
       if (battery.lcdOn) {
-        graph.plot(RTCdata, 7);
+        graph.plot(rtcData, 7);
         battery.showBatteryCapacity();
       }
 
-      sprintf(strBuf, "/%d-%02d-%02d.csv", RTCdata.date.year, RTCdata.date.month, RTCdata.date.date);
-      logging(strBuf, RTCdata, co2, temperature, humidity);
+      sprintf(strBuf, "/%d-%02d-%02d.csv", rtcData.date.year, rtcData.date.month, rtcData.date.date);
+      logging(strBuf, rtcData, co2, temperature, humidity);
 
       co2Sum = 0;
       tempSum = 0;
@@ -362,20 +392,43 @@ void loop() {
       numSum = 0;
     }
   }
+}
 
+/**
+ * @brief NTP同期の管理
+ * VBUS接続時に24時間経過していれば同期する
+ */
+void processNtpSync() {
+  time_t now = time(NULL);
+  bool isVbusConnected = battery.isVbusConnected();
+  if (isVbusConnected && !wasVbusConnected && (now - lastNtpSyncTime >= NTP_SYNC_INTERVAL)) {
+    wifiConnection();
+  }
+  wasVbusConnected = isVbusConnected;
+}
+
+/**
+ * @brief Arduino loop
+ */
+void loop() {
+  m5::rtc_datetime_t RTCdata;
+  
+  RTCdata = M5.Rtc.getDateTime();
+
+  // センサーデータ処理
+  processSensorData(RTCdata);
+
+  // 1分毎の更新処理
+  processMinuteUpdate(RTCdata);
+
+  // 電源状態の変化チェック
   if (battery.updatePowerState()) {   // USBが接続された時にLCDのアップデートが必要
     graph.plot(RTCdata, 7);
     battery.showBatteryCapacity();
   }
 
-  // VBUSが未接続から接続状態に変化 かつ 前回の実行から24時間経過している場合のみ実行
-  time_t now = time(NULL);
-  bool isVbusConnected = battery.isVbusConnected();
-  if (isVbusConnected && !wasVbusConnected && (now - lastNtpSyncTime >= NTP_SYNC_INTERVAL)) {
-    M5.Display.setCursor(0, 20, 2);
-    wifiConnection();
-  }
-  wasVbusConnected = isVbusConnected;
+  // NTP同期確認
+  processNtpSync();
 
   // light sleep
   M5.Power.lightSleep(1000000);
