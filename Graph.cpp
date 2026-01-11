@@ -129,20 +129,17 @@ void Graph::drawline(float* values, uint16_t ystep, uint32_t color, boolean labe
         pt &= BUF_MASK;
 
         if (y > _ymin && y < _ymax) {
-            // _sprite.drawPixel(_xmin + _width - 1 - i, y - 1, color);
-            // _sprite.drawPixel(_xmin + _width - 1 - i, y    , color);
-            // _sprite.drawPixel(_xmin + _width - 1 - i, y + 1, color);
             _sprite.drawLine(_xmin + _width - 1 - i, y - 1, _xmin + _width - 1 - i, y + 1, color);
         }
+    }
 
-        if (label) {
-            _sprite.setTextDatum(2);
-            _sprite.setTextColor(color);
-            _sprite.drawNumber(offset, labelPos, _ymid - 4);
-            for (int n = 1; n < _height / _ygrid / 2; n++) {
-                _sprite.drawNumber(offset + n * ystep, labelPos, _ymid - 4 - n * _ygrid);
-                _sprite.drawNumber(offset - n * ystep, labelPos, _ymid - 4 + n * _ygrid);
-            }
+    if (label) {
+        _sprite.setTextDatum(2);
+        _sprite.setTextColor(color);
+        _sprite.drawNumber(offset, labelPos, _ymid - 4);
+        for (int n = 1; n < _height / _ygrid / 2; n++) {
+            _sprite.drawNumber(offset + n * ystep, labelPos, _ymid - 4 - n * _ygrid);
+            _sprite.drawNumber(offset - n * ystep, labelPos, _ymid - 4 + n * _ygrid);
         }
     }
 }
