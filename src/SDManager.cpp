@@ -17,6 +17,7 @@
 // SDカード初期化
 // ============================================================
 void initSD() {
+    SD.end();  // 既存マウントを確実に解除
     if (!SD.begin(SD_CS_PIN, SPI, SD_FREQ)) {
         LOG_E("SD", "Mount Failed");
     } else {
@@ -37,6 +38,16 @@ void writeLogToSD(m5::rtc_datetime_t *rtcData,
              rtcData->date.year, rtcData->date.month, rtcData->date.date);
 
     File file = SD.open(logFileName, FILE_APPEND);
+    // SDカード抜き差し等でマウントが失われている場合は再初期化を試みる
+    if (!file) {
+        LOG_W("SD", "File open failed, trying to re-mount...");
+        SD.end();
+        delay(100);
+        if (SD.begin(SD_CS_PIN, SPI, SD_FREQ)) {
+            LOG_I("SD", "Re-mounted successfully");
+            file = SD.open(logFileName, FILE_APPEND);
+        }
+    }
     if (file) {
         file.printf("%04d-%02d-%02d %02d:%02d:%02d, %d, %.2f, %.2f\n",
                     rtcData->date.year, rtcData->date.month, rtcData->date.date,

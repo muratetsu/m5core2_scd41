@@ -20,6 +20,8 @@ namespace NWManager {
 
     static bool ntpSyncing = false;
     static uint32_t ntpStartTime = 0;
+    static m5::rtc_datetime_t rtcBeforeNTP;
+    static bool firstNTPSync = true;
 
     void connectIfVbus() {
         if (WiFi.status() == WL_CONNECTED || state.wifiConnecting) {
@@ -113,9 +115,47 @@ namespace NWManager {
                   rtcData.date.year, rtcData.date.month, rtcData.date.date,
                   rtcData.time.hours, rtcData.time.minutes, rtcData.time.seconds);
             
-            // Load history from SD (NTP同期後にSDから最新データを再ロード)
-            loadHistoryFromSD(&rtcData);
-            loadDailyHistoryFromSD(&rtcData);
+            // 初回同期、または時刻が大きく変わった場合のみSDからロード
+            bool shouldLoadSD = false;
+            if (firstNTPSync) {
+                shouldLoadSD = true;
+                firstNTPSync = false;
+                LOG_I("NTP", "First NTP sync. Loading history from SD.");
+            } else {
+                // RTC時刻とNTP時刻の差を計算
+                struct tm tm_before = {0};
+                tm_before.tm_year  = rtcBeforeNTP.date.year - 1900;
+                tm_before.tm_mon   = rtcBeforeNTP.date.month - 1;
+                tm_before.tm_mday  = rtcBeforeNTP.date.date;
+                tm_before.tm_hour  = rtcBeforeNTP.time.hours;
+                tm_before.tm_min   = rtcBeforeNTP.time.minutes;
+                tm_before.tm_sec   = rtcBeforeNTP.time.seconds;
+                tm_before.tm_isdst = -1;
+                time_t t_before = mktime(&tm_before);
+                
+                struct tm tm_after = {0};
+                tm_after.tm_year  = rtcData.date.year - 1900;
+                tm_after.tm_mon   = rtcData.date.month - 1;
+                tm_after.tm_mday  = rtcData.date.date;
+                tm_after.tm_hour  = rtcData.time.hours;
+                tm_after.tm_min   = rtcData.time.minutes;
+                tm_after.tm_sec   = rtcData.time.seconds;
+                tm_after.tm_isdst = -1;
+                time_t t_after = mktime(&tm_after);
+                
+                long diff = (long)difftime(t_after, t_before);
+                if (labs(diff) > 3600) { // 1時間以上の差
+                    shouldLoadSD = true;
+                    LOG_I("NTP", "Time diff > 1h (%ld sec). Reloading history from SD.", diff);
+                } else {
+                    LOG_I("NTP", "Time diff small (%ld sec). Skipping SD reload.", diff);
+                }
+            }
+            
+            if (shouldLoadSD) {
+                loadHistoryFromSD(&rtcData);
+                loadDailyHistoryFromSD(&rtcData);
+            }
             
             // Refresh chart and backlight
             SensorChart_RefreshAll();
@@ -128,6 +168,9 @@ namespace NWManager {
 
     void syncNTP() {
         LOG_I("NTP", "NTP synchronization requested.");
+        // NTP開始前のRTC時刻を保存（後で時刻変化量を判定するため）
+        rtcBeforeNTP = M5.Rtc.getDateTime();
+        
         // NTPの実同期を確実に検知するため、ESP32内部RTCを1970年にリセット
         struct timeval tv = {0};
         settimeofday(&tv, NULL);
