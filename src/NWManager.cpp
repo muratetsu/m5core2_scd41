@@ -11,6 +11,7 @@
 #include "ota.h"
 #include "SensorChart.h"
 #include <WiFi.h>
+#include <sys/time.h>
 
 // Forward declaration of the global checkScanStatus defined in Screen_WiFi.cpp
 void checkScanStatus();
@@ -127,7 +128,13 @@ namespace NWManager {
 
     void syncNTP() {
         LOG_I("NTP", "NTP synchronization requested.");
-        configTime(9 * 3600, 0, "ntp.nict.jp", "time.google.com");
+        // NTPの実同期を確実に検知するため、ESP32内部RTCを1970年にリセット
+        struct timeval tv = {0};
+        settimeofday(&tv, NULL);
+
+        configTime(0, 0, "ntp.nict.jp", "time.google.com");
+        setenv("TZ", "JST-9", 1);
+        tzset();
     }
 
     bool isConnected() {
