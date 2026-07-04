@@ -242,6 +242,7 @@ void setup() {
     cfg.output_power = false;
     cfg.internal_imu = false;
     cfg.internal_mic = false;
+    cfg.serial_baudrate = 115200;
     M5.begin(cfg);
     
     LOG_I("Boot", "M5Stack SCD41 Sensor starting up (LVGL Mode)...");
