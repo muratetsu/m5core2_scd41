@@ -3,6 +3,7 @@
 // June 2026 - Tetsu Nishimura
 
 #include "Battery.h"
+#include "Logger.h"
 
 // M5GFX用ローカル色定数 (RGB888)
 static const uint32_t BAT_COLOR_OK  = 0x00cc00;
@@ -77,10 +78,14 @@ bool Battery::updatePowerState() {
     }
 
     // Powerボタン押下で手動Sleep/Wake切り替え
-    if (M5.BtnPWR.wasPressed()) {
+    uint8_t keyState = M5.Power.getKeyState();
+    if (keyState == 0x02) {
+        LOG_D("Power", "Power button pressed! keyState=0x%02X, lcdOn=%d", keyState, lcdOn);
         if (lcdOn) {
+            LOG_D("Power", "Going to sleep LCD");
             sleepLcd();
         } else {
+            LOG_D("Power", "Waking up LCD");
             wakeupLcd();
             lcdUpdateRequired = true;
         }

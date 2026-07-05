@@ -21,7 +21,6 @@ namespace NWManager {
     static bool ntpSyncing = false;
     static uint32_t ntpStartTime = 0;
     static m5::rtc_datetime_t rtcBeforeNTP;
-    static bool firstNTPSync = true;
 
     void connectIfVbus() {
         if (WiFi.status() == WL_CONNECTED || state.wifiConnecting) {
@@ -117,41 +116,35 @@ namespace NWManager {
             
             // 初回同期、または時刻が大きく変わった場合のみSDからロード
             bool shouldLoadSD = false;
-            if (firstNTPSync) {
-                shouldLoadSD = true;
-                firstNTPSync = false;
-                LOG_I("NTP", "First NTP sync. Loading history from SD.");
-            } else {
-                // RTC時刻とNTP時刻の差を計算
-                struct tm tm_before = {0};
-                tm_before.tm_year  = rtcBeforeNTP.date.year - 1900;
-                tm_before.tm_mon   = rtcBeforeNTP.date.month - 1;
-                tm_before.tm_mday  = rtcBeforeNTP.date.date;
-                tm_before.tm_hour  = rtcBeforeNTP.time.hours;
-                tm_before.tm_min   = rtcBeforeNTP.time.minutes;
-                tm_before.tm_sec   = rtcBeforeNTP.time.seconds;
-                tm_before.tm_isdst = -1;
-                time_t t_before = mktime(&tm_before);
-                
-                struct tm tm_after = {0};
-                tm_after.tm_year  = rtcData.date.year - 1900;
-                tm_after.tm_mon   = rtcData.date.month - 1;
-                tm_after.tm_mday  = rtcData.date.date;
-                tm_after.tm_hour  = rtcData.time.hours;
-                tm_after.tm_min   = rtcData.time.minutes;
-                tm_after.tm_sec   = rtcData.time.seconds;
-                tm_after.tm_isdst = -1;
-                time_t t_after = mktime(&tm_after);
-                
-                long diff = (long)difftime(t_after, t_before);
-                if (labs(diff) > 3600) { // 1時間以上の差
-                    shouldLoadSD = true;
-                    LOG_I("NTP", "Time diff > 1h (%ld sec). Reloading history from SD.", diff);
-                } else {
-                    LOG_I("NTP", "Time diff small (%ld sec). Skipping SD reload.", diff);
-                }
-            }
+            // RTC時刻とNTP時刻の差を計算
+            struct tm tm_before = {0};
+            tm_before.tm_year  = rtcBeforeNTP.date.year - 1900;
+            tm_before.tm_mon   = rtcBeforeNTP.date.month - 1;
+            tm_before.tm_mday  = rtcBeforeNTP.date.date;
+            tm_before.tm_hour  = rtcBeforeNTP.time.hours;
+            tm_before.tm_min   = rtcBeforeNTP.time.minutes;
+            tm_before.tm_sec   = rtcBeforeNTP.time.seconds;
+            tm_before.tm_isdst = -1;
+            time_t t_before = mktime(&tm_before);
             
+            struct tm tm_after = {0};
+            tm_after.tm_year  = rtcData.date.year - 1900;
+            tm_after.tm_mon   = rtcData.date.month - 1;
+            tm_after.tm_mday  = rtcData.date.date;
+            tm_after.tm_hour  = rtcData.time.hours;
+            tm_after.tm_min   = rtcData.time.minutes;
+            tm_after.tm_sec   = rtcData.time.seconds;
+            tm_after.tm_isdst = -1;
+            time_t t_after = mktime(&tm_after);
+            
+            long diff = (long)difftime(t_after, t_before);
+            if (labs(diff) > 3600) { // 1時間以上の差
+                shouldLoadSD = true;
+                LOG_I("NTP", "Time diff > 1h (%ld sec). Reloading history from SD.", diff);
+            } else {
+                LOG_I("NTP", "Time diff small (%ld sec). Skipping SD reload.", diff);
+            }
+                
             if (shouldLoadSD) {
                 loadHistoryFromSD(&rtcData);
                 loadDailyHistoryFromSD(&rtcData);
