@@ -12,6 +12,7 @@
 #include "SensorChart.h"
 #include <WiFi.h>
 #include <sys/time.h>
+#include <esp_sntp.h>
 
 // Forward declaration of the global checkScanStatus defined in Screen_WiFi.cpp
 void checkScanStatus();
@@ -94,10 +95,13 @@ namespace NWManager {
             return;
         }
 
-        struct tm timeInfo;
-        if (getLocalTime(&timeInfo, 0)) {
+        if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
             ntpSyncing = false;
             LOG_I("NTP", "Time synchronized successfully.");
+
+            // 内部RTCから時刻を取得（NTP同期済みの正確な時刻）
+            struct tm timeInfo;
+            getLocalTime(&timeInfo, 0);
 
             // Synchronize M5 RTC
             m5::rtc_datetime_t rtcData;
@@ -164,8 +168,17 @@ namespace NWManager {
         // NTP開始前のRTC時刻を保存（後で時刻変化量を判定するため）
         rtcBeforeNTP = M5.Rtc.getDateTime();
         
-        // NTPの実同期を確実に検知するため、ESP32内部RTCを1970年にリセット
-        struct timeval tv = {0};
+        // M5 RTCの時刻をESP32内部RTCに設定（時刻表示が消えないように）
+        struct tm tm_rtc = {0};
+        tm_rtc.tm_year  = rtcBeforeNTP.date.year - 1900;
+        tm_rtc.tm_mon   = rtcBeforeNTP.date.month - 1;
+        tm_rtc.tm_mday  = rtcBeforeNTP.date.date;
+        tm_rtc.tm_hour  = rtcBeforeNTP.time.hours;
+        tm_rtc.tm_min   = rtcBeforeNTP.time.minutes;
+        tm_rtc.tm_sec   = rtcBeforeNTP.time.seconds;
+        tm_rtc.tm_isdst = -1;
+        time_t t_rtc = mktime(&tm_rtc);
+        struct timeval tv = { t_rtc, 0 };
         settimeofday(&tv, NULL);
 
         configTime(0, 0, "ntp.nict.jp", "time.google.com");
