@@ -334,6 +334,15 @@ void loop() {
         }
     }
 
+    // 3.5 バッテリー駆動時、画面点灯中のタッチで消灯カウントダウンをリセット
+    if (!isVbus && battery.lcdOn) {
+        auto detail = M5.Touch.getDetail(0);
+        if (detail.wasPressed()) {
+            battery.resetDisplayOffTimer();
+            updateBacklightBrightness();
+        }
+    }
+
     // 4. Poll sensor readings
     processSensorData();
 

@@ -27,6 +27,9 @@ public:
     // VBUSが接続されているか確認する
     bool isVbusConnected();
 
+    // 画面消灯カウントダウンをリセットする
+    void resetDisplayOffTimer();
+
     // LCDがON状態か
     bool lcdOn;
 
