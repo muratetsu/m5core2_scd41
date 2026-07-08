@@ -36,6 +36,9 @@ static int aggNumSamples = 0;
 
 static uint32_t lastDateTimeUpdate = 0;
 static bool wasVbusConnected = false;
+static uint32_t vbusDebounceTimer = 0;
+
+#define VBUS_DEBOUNCE_MS 500  // VBUS状態変化のデバウンス時間 (ms)
 
 // Backlight Constants
 #define BRIGHTNESS_DAY      128
@@ -302,15 +305,23 @@ void loop() {
     NWManager::checkScanStatus();
     otaLoop();
 
-    // 2. Check for VBUS/USB power status changes
+    // 2. Check for VBUS/USB power status changes (with debounce)
     bool isVbus = battery.isVbusConnected();
     if (isVbus != wasVbusConnected) {
-        wasVbusConnected = isVbus;
-        if (isVbus) {
-            NWManager::connectIfVbus();
-        } else {
-            NWManager::disconnectIfBattery();
+        if (vbusDebounceTimer == 0) {
+            vbusDebounceTimer = millis();  // 初回変化でタイマー開始
+        } else if (millis() - vbusDebounceTimer >= VBUS_DEBOUNCE_MS) {
+            // デバウンス時間経過後、状態を確定
+            wasVbusConnected = isVbus;
+            vbusDebounceTimer = 0;
+            if (isVbus) {
+                NWManager::connectIfVbus();
+            } else {
+                NWManager::disconnectIfBattery();
+            }
         }
+    } else {
+        vbusDebounceTimer = 0;  // 状態が安定したらタイマーリセット
     }
 
     // 3. Update battery power management cycle
