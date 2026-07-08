@@ -337,8 +337,8 @@ void loop() {
     // 6. Aggregate data once per minute
     processMinuteAggregation();
 
-    // 7. Light Sleep Cycle (only when USB is disconnected and WiFi is idle)
-    if (!isVbus && !state.wifiConnecting && WiFi.scanComplete() != WIFI_SCAN_RUNNING && WiFi.status() != WL_CONNECTED) {
+    // 7. Light Sleep Cycle (only when USB is disconnected, LCD is off, and WiFi is idle)
+    if (!isVbus && !battery.lcdOn && !state.wifiConnecting && WiFi.scanComplete() != WIFI_SCAN_RUNNING && WiFi.status() != WL_CONNECTED) {
         M5.Power.lightSleep(1000000); // sleep 1s
     } else {
         delay(5);
