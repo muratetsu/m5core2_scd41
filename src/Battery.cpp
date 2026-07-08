@@ -78,9 +78,9 @@ bool Battery::updatePowerState() {
     }
 
     // Powerボタン押下で手動Sleep/Wake切り替え
-    uint8_t keyState = M5.Power.getKeyState();
-    if (keyState == 0x02) {
-        LOG_D("Power", "Power button pressed! keyState=0x%02X, lcdOn=%d", keyState, lcdOn);
+    // M5.update() で PMIC レジスタがクリアされるため、M5.BtnPWR を使用
+    if (M5.BtnPWR.wasClicked()) {
+        LOG_D("Power", "Power button clicked! lcdOn=%d", lcdOn);
         if (lcdOn) {
             LOG_D("Power", "Going to sleep LCD");
             sleepLcd();
