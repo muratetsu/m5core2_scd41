@@ -169,5 +169,5 @@ void Battery::showBatteryCapacity() {
     // ％テキスト
     sprintf(buf, " %d%%", capacity);
     M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Display.drawRightString(buf, _posX - 2, _posY, 2);
+    M5.Display.drawRightString(buf, _posX - 2, _posY, &fonts::Font2);
 }
