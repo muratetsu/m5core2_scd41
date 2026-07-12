@@ -73,9 +73,6 @@ static void btn_save_cb(lv_event_t *e) {
     // ダングリングポインタアクセスによるクラッシュの原因になる。
     // showSensorScreen() → SensorChart_Init() → SensorChart_RefreshAll() で更新される。
 
-    // バックライト輝度を即時再計算
-    updateBacklightBrightness();
-
     // Go back to Sensor screen
     showSensorScreen();
   }

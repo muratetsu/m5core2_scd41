@@ -154,9 +154,8 @@ namespace NWManager {
                 loadDailyHistoryFromSD(&rtcData);
             }
             
-            // Refresh chart and backlight
+            // Refresh chart
             SensorChart_RefreshAll();
-            updateBacklightBrightness();
         } else if (millis() - ntpStartTime > WIFI_TIMEOUT_MS) {
             ntpSyncing = false;
             LOG_E("NTP", "Failed to obtain time (Timeout). History load skipped.");

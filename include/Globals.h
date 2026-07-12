@@ -64,6 +64,5 @@ void showSensorScreen();
 void showMenuScreen();
 void showDateSetScreen();
 void showTestScreen();
-void updateBacklightBrightness();
 
 #endif // GLOBALS_H

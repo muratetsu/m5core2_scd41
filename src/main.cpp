@@ -40,12 +40,6 @@ static uint32_t vbusDebounceTimer = 0;
 
 #define VBUS_DEBOUNCE_MS 500  // VBUS状態変化のデバウンス時間 (ms)
 
-// Backlight Constants
-#define BRIGHTNESS_DAY      128
-#define BRIGHTNESS_NIGHT    16
-#define BACKLIGHT_HOUR_DAWN 6
-#define BACKLIGHT_HOUR_DUSK 22
-
 // Screen switching definitions
 void showWiFiScreen() {
     resetWiFiUI_Fields();
@@ -154,22 +148,6 @@ void lvgl_init() {
 }
 
 // ============================================================
-// Backlight Brightness Control
-// ============================================================
-
-void updateBacklightBrightness() {
-    m5::rtc_datetime_t now = M5.Rtc.getDateTime();
-    int hour = now.time.hours;
-    if (hour >= BACKLIGHT_HOUR_DUSK || hour < BACKLIGHT_HOUR_DAWN) {
-        M5.Display.setBrightness(BRIGHTNESS_NIGHT);
-        LOG_D("Backlight", "Night mode (Brightness: %d)", BRIGHTNESS_NIGHT);
-    } else {
-        M5.Display.setBrightness(BRIGHTNESS_DAY);
-        LOG_D("Backlight", "Day mode (Brightness: %d)", BRIGHTNESS_DAY);
-    }
-}
-
-// ============================================================
 // Sensor Readings & Aggregation
 // ============================================================
 
@@ -229,8 +207,6 @@ void processMinuteAggregation() {
             aggSumTemp = 0.0f;
             aggSumHumid = 0.0f;
             aggNumSamples = 0;
-
-            updateBacklightBrightness();
         }
     }
 }
@@ -249,6 +225,7 @@ void setup() {
     M5.begin(cfg);
     
     LOG_I("Boot", "M5Stack SCD41 Sensor starting up (LVGL Mode)...");
+    M5.Display.setBrightness(128);
 
     // 2. Initialize SD card
     initSD();
@@ -339,7 +316,7 @@ void loop() {
         auto detail = M5.Touch.getDetail(0);
         if (detail.wasPressed()) {
             battery.resetDisplayOffTimer();
-            updateBacklightBrightness();
+            M5.Display.setBrightness(128);
         }
     }
 
