@@ -18,19 +18,7 @@ static lv_obj_t *label_battery = NULL;
 
 #include "SensorChart.h"
 
-// ─────────────────────────────────────────────────────────────
-static lv_obj_t *span_btn = NULL;
-static lv_obj_t *span_label = NULL;
 
-// ─────────────────────────────────────────────────────────────
-static void span_btn_event_cb(lv_event_t * e) {
-    int new_mode = (SensorChart_GetMode() == 0) ? 1 : 0;
-    SensorChart_SetMode(new_mode);
-    if (span_label) {
-        lv_label_set_text(span_label, (new_mode == 0) ? "4H" : "24H");
-    }
-    LOG_I("UI", "Switched to %s mode", (new_mode == 0) ? "4H" : "24H");
-}
 
 void resetSensorUI_Fields() {
   label_datetime = NULL;
@@ -131,8 +119,15 @@ void updateSensorChartData(uint16_t co2, float temp, float humid) {
 
 void createSensorUI(lv_obj_t *scr) {
   lv_obj_set_style_bg_color(scr, THEME_BG_BLACK, 0);
-  lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(scr, datetime_touch_cb, LV_EVENT_CLICKED, NULL);
+
+  // --- 画面上部のタップエリア（日付やバッテリー表示のある領域。タップでメニュー画面へ） ---
+  lv_obj_t *top_click_area = lv_obj_create(scr);
+  lv_obj_remove_style_all(top_click_area);
+  lv_obj_set_size(top_click_area, screenWidth, 40);
+  lv_obj_align(top_click_area, LV_ALIGN_TOP_LEFT, 0, 0);
+  lv_obj_add_flag(top_click_area, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(top_click_area, datetime_touch_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_clear_flag(top_click_area, LV_OBJ_FLAG_SCROLLABLE);
 
   label_wifi = lv_label_create(scr);
   lv_label_set_text(label_wifi, LV_SYMBOL_WIFI);
@@ -146,48 +141,21 @@ void createSensorUI(lv_obj_t *scr) {
   lv_obj_set_style_text_font(label_datetime, &lv_font_montserrat_20, 0); 
   lv_obj_align_to(label_datetime, label_wifi, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
 
-  // --- 期間切り替え用トグルボタン (4H / 24H) ---
-  // タッチエリア用の透明な親コンテナ（大きめ）
-  lv_obj_t *span_touch_area = lv_obj_create(scr);
-  lv_obj_remove_style_all(span_touch_area);
-  lv_obj_set_size(span_touch_area, 70, 50);
-  lv_obj_align(span_touch_area, LV_ALIGN_TOP_RIGHT, 0, 0);
-  lv_obj_add_event_cb(span_touch_area, span_btn_event_cb, LV_EVENT_CLICKED, NULL);
-  lv_obj_clear_flag(span_touch_area, LV_OBJ_FLAG_SCROLLABLE);
-
-  // 見た目のボタン（小さめ）
-  span_btn = lv_btn_create(span_touch_area);
-  lv_obj_set_size(span_btn, 50, 25);
-  lv_obj_align(span_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
-  lv_obj_clear_flag(span_btn, LV_OBJ_FLAG_CLICKABLE); // 親がタッチを受け取る
-  
-  // スタイル：白背景に黒文字
-  lv_obj_set_style_bg_color(span_btn, THEME_TEXT_WHITE, 0);
-  lv_obj_set_style_border_width(span_btn, 0, 0);
-  lv_obj_set_style_pad_all(span_btn, 2, 0);
-
-  // ボタン上に現在のモードを表示するラベル
-  span_label = lv_label_create(span_btn);
-  lv_label_set_text(span_label, (SensorChart_GetMode() == 0) ? "4H" : "24H");
-  lv_obj_set_style_text_font(span_label, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_color(span_label, THEME_BG_BLACK, 0);
-  lv_obj_center(span_label);
+  // --- Battery Label ---
+  label_battery = lv_label_create(scr);
+  lv_label_set_text(label_battery, "");
+  lv_obj_set_style_text_font(label_battery, &lv_font_montserrat_16, 0);
+  // 画面上部右側に寄せる
+  lv_obj_align(label_battery, LV_ALIGN_TOP_RIGHT, -10, 2);
 
   // --- OTA Notification Icon ---
   label_ota_icon = lv_label_create(scr);
   lv_label_set_text(label_ota_icon, LV_SYMBOL_BELL);
   lv_obj_set_style_text_color(label_ota_icon, THEME_COLOR_WARNING, 0); // Orange/Yellow
   lv_obj_set_style_text_font(label_ota_icon, &lv_font_montserrat_16, 0); // same as wifi
-  // 4H/24Hボタン(span_btn)の左隣に配置
-  lv_obj_align_to(label_ota_icon, span_btn, LV_ALIGN_OUT_LEFT_MID, -10, 0);
+  // バッテリ残量表示の左隣に配置
+  lv_obj_align_to(label_ota_icon, label_battery, LV_ALIGN_OUT_LEFT_MID, -5, 0);
   lv_obj_add_flag(label_ota_icon, LV_OBJ_FLAG_HIDDEN); // Hidden by default
-
-  // --- Battery Label ---
-  label_battery = lv_label_create(scr);
-  lv_label_set_text(label_battery, "");
-  lv_obj_set_style_text_font(label_battery, &lv_font_montserrat_16, 0);
-  // Align left to the OTA icon / span button
-  lv_obj_align_to(label_battery, span_btn, LV_ALIGN_OUT_LEFT_MID, -88, 0);
 
   // --- CO2 ---
   label_co2 = lv_label_create(scr);
