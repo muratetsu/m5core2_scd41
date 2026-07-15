@@ -46,6 +46,8 @@ struct AppState {
     uint32_t  wifiStartTime;
     bool      bootConnecting;
     int       graphMode;   // 0=4H, 1=1D
+    volatile bool needSDHistoryReload = false;
+    volatile bool ntpUpdated = false;
 };
 
 extern AppState state;

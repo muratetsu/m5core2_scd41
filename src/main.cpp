@@ -243,6 +243,7 @@ void setup() {
     SensorManager::init();
 
     // 7. Load local history from SD based on current RTC time
+    NWManager::syncSystemTimeWithRTC();
     m5::rtc_datetime_t now = M5.Rtc.getDateTime();
     loadHistoryFromSD(&now);
     loadDailyHistoryFromSD(&now);
@@ -303,6 +304,7 @@ void loop() {
 
     // 3. Update battery power management cycle
     if (battery.updatePowerState()) {
+        NWManager::syncSystemTimeWithRTC();
         // Redraw screen if screen just woke up
         if (state.currentScreen == SCREEN_SENSOR) {
             showSensorScreen();
@@ -327,6 +329,7 @@ void loop() {
     if (state.currentScreen == SCREEN_SENSOR && battery.lcdOn) {
         if (millis() - lastDateTimeUpdate >= 1000) {
             lastDateTimeUpdate = millis();
+            NWManager::syncSystemTimeWithRTC();
             updateSensorLabel();
         }
     }
@@ -337,6 +340,7 @@ void loop() {
     // 7. Light Sleep Cycle (only when USB is disconnected, LCD is off, and WiFi is idle)
     if (!isVbus && !battery.lcdOn && !state.wifiConnecting && WiFi.scanComplete() != WIFI_SCAN_RUNNING && WiFi.status() != WL_CONNECTED) {
         M5.Power.lightSleep(1000000); // sleep 1s
+        NWManager::syncSystemTimeWithRTC();
     } else {
         delay(5);
     }

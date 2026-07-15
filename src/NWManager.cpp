@@ -91,94 +91,90 @@ namespace NWManager {
     }
 
     void checkNTPStatus() {
+        if (state.needSDHistoryReload) {
+            state.needSDHistoryReload = false;
+            m5::rtc_datetime_t now = M5.Rtc.getDateTime();
+            loadHistoryFromSD(&now);
+            loadDailyHistoryFromSD(&now);
+        }
+
+        if (state.ntpUpdated) {
+            state.ntpUpdated = false;
+            SensorChart_RefreshAll();
+        }
+
         if (!ntpSyncing) {
             return;
         }
 
         if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
             ntpSyncing = false;
-            LOG_I("NTP", "Time synchronized successfully.");
-
-            // 内部RTCから時刻を取得（NTP同期済みの正確な時刻）
-            struct tm timeInfo;
-            getLocalTime(&timeInfo, 0);
-
-            // Synchronize M5 RTC
-            m5::rtc_datetime_t rtcData;
-            rtcData.date.year = timeInfo.tm_year + 1900;
-            rtcData.date.month = timeInfo.tm_mon + 1;
-            rtcData.date.date = timeInfo.tm_mday;
-            rtcData.date.weekDay = timeInfo.tm_wday;
-            rtcData.time.hours = timeInfo.tm_hour;
-            rtcData.time.minutes = timeInfo.tm_min;
-            rtcData.time.seconds = timeInfo.tm_sec;
-            M5.Rtc.setDateTime(rtcData);
-            
-            LOG_I("NTP", "RTC updated from NTP: %04d/%02d/%02d %02d:%02d:%02d",
-                  rtcData.date.year, rtcData.date.month, rtcData.date.date,
-                  rtcData.time.hours, rtcData.time.minutes, rtcData.time.seconds);
-            
-            // 初回同期、または時刻が大きく変わった場合のみSDからロード
-            bool shouldLoadSD = false;
-            // RTC時刻とNTP時刻の差を計算
-            struct tm tm_before = {0};
-            tm_before.tm_year  = rtcBeforeNTP.date.year - 1900;
-            tm_before.tm_mon   = rtcBeforeNTP.date.month - 1;
-            tm_before.tm_mday  = rtcBeforeNTP.date.date;
-            tm_before.tm_hour  = rtcBeforeNTP.time.hours;
-            tm_before.tm_min   = rtcBeforeNTP.time.minutes;
-            tm_before.tm_sec   = rtcBeforeNTP.time.seconds;
-            tm_before.tm_isdst = -1;
-            time_t t_before = mktime(&tm_before);
-            
-            struct tm tm_after = {0};
-            tm_after.tm_year  = rtcData.date.year - 1900;
-            tm_after.tm_mon   = rtcData.date.month - 1;
-            tm_after.tm_mday  = rtcData.date.date;
-            tm_after.tm_hour  = rtcData.time.hours;
-            tm_after.tm_min   = rtcData.time.minutes;
-            tm_after.tm_sec   = rtcData.time.seconds;
-            tm_after.tm_isdst = -1;
-            time_t t_after = mktime(&tm_after);
-            
-            long diff = (long)difftime(t_after, t_before);
-            if (labs(diff) > 3600) { // 1時間以上の差
-                shouldLoadSD = true;
-                LOG_I("NTP", "Time diff > 1h (%ld sec). Reloading history from SD.", diff);
-            } else {
-                LOG_I("NTP", "Time diff small (%ld sec). Skipping SD reload.", diff);
-            }
-                
-            if (shouldLoadSD) {
-                loadHistoryFromSD(&rtcData);
-                loadDailyHistoryFromSD(&rtcData);
-            }
-            
-            // Refresh chart
-            SensorChart_RefreshAll();
+            LOG_I("NTP", "Initial NTP synchronization completed successfully.");
         } else if (millis() - ntpStartTime > WIFI_TIMEOUT_MS) {
             ntpSyncing = false;
-            LOG_E("NTP", "Failed to obtain time (Timeout). History load skipped.");
+            LOG_E("NTP", "Failed to obtain time (Timeout).");
         }
+    }
+
+    static void timeSyncCallback(struct timeval *tv) {
+        LOG_I("NTP", "SNTP sync notification callback triggered.");
+        
+        time_t now = tv->tv_sec;
+        struct tm timeInfo;
+        localtime_r(&now, &timeInfo);
+        
+        m5::rtc_datetime_t rtcBefore = M5.Rtc.getDateTime();
+        
+        m5::rtc_datetime_t rtcData;
+        rtcData.date.year = timeInfo.tm_year + 1900;
+        rtcData.date.month = timeInfo.tm_mon + 1;
+        rtcData.date.date = timeInfo.tm_mday;
+        rtcData.date.weekDay = timeInfo.tm_wday;
+        rtcData.time.hours = timeInfo.tm_hour;
+        rtcData.time.minutes = timeInfo.tm_min;
+        rtcData.time.seconds = timeInfo.tm_sec;
+        M5.Rtc.setDateTime(rtcData);
+        
+        LOG_I("NTP", "RTC updated from NTP callback: %04d/%02d/%02d %02d:%02d:%02d",
+              rtcData.date.year, rtcData.date.month, rtcData.date.date,
+              rtcData.time.hours, rtcData.time.minutes, rtcData.time.seconds);
+              
+        struct tm tm_before = {0};
+        tm_before.tm_year  = rtcBefore.date.year - 1900;
+        tm_before.tm_mon   = rtcBefore.date.month - 1;
+        tm_before.tm_mday  = rtcBefore.date.date;
+        tm_before.tm_hour  = rtcBefore.time.hours;
+        tm_before.tm_min   = rtcBefore.time.minutes;
+        tm_before.tm_sec   = rtcBefore.time.seconds;
+        tm_before.tm_isdst = -1;
+        time_t t_before = mktime(&tm_before);
+        
+        long diff = (long)difftime(now, t_before);
+        if (labs(diff) > 3600) { // 1時間以上の差
+            state.needSDHistoryReload = true;
+            LOG_I("NTP", "Time diff > 1h (%ld sec). Scheduled history reload from SD.", diff);
+        } else {
+            LOG_I("NTP", "Time diff small (%ld sec). Skipping SD reload.", diff);
+        }
+        
+        state.ntpUpdated = true;
     }
 
     void syncNTP() {
         LOG_I("NTP", "NTP synchronization requested.");
+        
+        static bool cb_registered = false;
+        if (!cb_registered) {
+            sntp_set_time_sync_notification_cb(timeSyncCallback);
+            cb_registered = true;
+            LOG_I("NTP", "Time sync notification callback registered.");
+        }
+        
         // NTP開始前のRTC時刻を保存（後で時刻変化量を判定するため）
         rtcBeforeNTP = M5.Rtc.getDateTime();
         
         // M5 RTCの時刻をESP32内部RTCに設定（時刻表示が消えないように）
-        struct tm tm_rtc = {0};
-        tm_rtc.tm_year  = rtcBeforeNTP.date.year - 1900;
-        tm_rtc.tm_mon   = rtcBeforeNTP.date.month - 1;
-        tm_rtc.tm_mday  = rtcBeforeNTP.date.date;
-        tm_rtc.tm_hour  = rtcBeforeNTP.time.hours;
-        tm_rtc.tm_min   = rtcBeforeNTP.time.minutes;
-        tm_rtc.tm_sec   = rtcBeforeNTP.time.seconds;
-        tm_rtc.tm_isdst = -1;
-        time_t t_rtc = mktime(&tm_rtc);
-        struct timeval tv = { t_rtc, 0 };
-        settimeofday(&tv, NULL);
+        syncSystemTimeWithRTC();
 
         configTime(0, 0, "ntp.nict.jp", "time.google.com");
         setenv("TZ", "JST-9", 1);
@@ -216,6 +212,25 @@ namespace NWManager {
         state.bootConnecting = true;
 
         LOG_I("Boot", "Auto-connecting to SSID: %s", ssid.c_str());
+    }
+
+    void syncSystemTimeWithRTC() {
+        m5::rtc_datetime_t rtcNow = M5.Rtc.getDateTime();
+        struct tm tm_rtc = {0};
+        tm_rtc.tm_year  = rtcNow.date.year - 1900;
+        tm_rtc.tm_mon   = rtcNow.date.month - 1;
+        tm_rtc.tm_mday  = rtcNow.date.date;
+        tm_rtc.tm_hour  = rtcNow.time.hours;
+        tm_rtc.tm_min   = rtcNow.time.minutes;
+        tm_rtc.tm_sec   = rtcNow.time.seconds;
+        tm_rtc.tm_isdst = -1;
+        time_t t_rtc = mktime(&tm_rtc);
+        struct timeval tv = { t_rtc, 0 };
+        settimeofday(&tv, NULL);
+        
+        LOG_D("NTP", "System time synchronized with RTC: %04d/%02d/%02d %02d:%02d:%02d",
+              rtcNow.date.year, rtcNow.date.month, rtcNow.date.date,
+              rtcNow.time.hours, rtcNow.time.minutes, rtcNow.time.seconds);
     }
 
 } // namespace NWManager

@@ -14,7 +14,7 @@ namespace NWManager {
     bool isConnected();
     bool isConnecting();
     void bootConnect(const String &ssid, const String &pass);
-
+    void syncSystemTimeWithRTC();
 } // namespace NWManager
 
 #endif // NW_MANAGER_H
