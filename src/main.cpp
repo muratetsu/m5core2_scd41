@@ -118,6 +118,11 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
 }
 
 void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data) {
+    // ディスプレイ消灯中はタッチを無効化
+    if (!battery.lcdOn) {
+        data->state = LV_INDEV_STATE_REL;
+        return;
+    }
     auto detail = M5.Touch.getDetail(0);
     if (detail.isPressed()) {
         data->state = LV_INDEV_STATE_PR;

@@ -91,15 +91,6 @@ bool Battery::updatePowerState() {
         }
     }
 
-    // 画面消灯時のタッチによる復帰
-    if (!lcdOn) {
-        auto detail = M5.Touch.getDetail(0);
-        if (detail.wasPressed()) {
-            wakeupLcd();
-            lcdUpdateRequired = true;
-        }
-    }
-
     return lcdUpdateRequired;
 }
 
