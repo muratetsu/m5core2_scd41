@@ -88,10 +88,10 @@ void updateSensorLabel() {
 
     char battBuf[32];
     if (charging) {
-      snprintf(battBuf, sizeof(battBuf), "%s %s %d%%", LV_SYMBOL_CHARGE, symbol, pct);
+      snprintf(battBuf, sizeof(battBuf), "%s %d%% %s", LV_SYMBOL_CHARGE, pct, symbol);
       lv_obj_set_style_text_color(label_battery, THEME_COLOR_GOOD, 0);
     } else {
-      snprintf(battBuf, sizeof(battBuf), "%s %d%%", symbol, pct);
+      snprintf(battBuf, sizeof(battBuf), "%d%% %s", pct, symbol);
       if (pct < 20) {
         lv_obj_set_style_text_color(label_battery, THEME_COLOR_ERROR, 0);
       } else {
