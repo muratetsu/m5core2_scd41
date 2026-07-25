@@ -164,12 +164,32 @@ void loadHistoryFromSD(m5::rtc_datetime_t *now) {
 
 // ============================================================
 // 起動時: 24H分の履歴をSDから読み込む
+//
+// バケツ座標系: updateDailyHistoryInRealTime() と同一の絶対座標を使用
+//   abs_bkt = (hour * 60 + min) / 6  (0〜239, 1日のどの6分枠か)
+//
+// 24Hウィンドウの構成:
+//   dailyHistCO2[abs_bkt]  でバッファに直接配置
+//   ・前日データ: abs_bkt > cur_bkt_now  (24H前〜今日0時前)
+//   ・当日データ: abs_bkt <= cur_bkt_now (今日0時〜現在)
+//
+// これにより initDailyHistoryRTMode(cur_bkt_now) 後のバッファ配置が
+// RTモードの書き込みと一致し、正しい時系列でグラフ表示される。
 // ============================================================
 void loadDailyHistoryFromSD(m5::rtc_datetime_t *now) {
     resetDailyHistory();
 
     setenv("TZ", "JST-9", 1);
     tzset();
+
+    // 現在の絶対バケツ番号 (RTモードと同一座標系)
+    int cur_bkt_now = (now->time.hours * 60 + now->time.minutes) / 6;
+
+    // バケツ毎の集計バッファ (インデックス = 絶対バケツ番号)
+    uint32_t sumCO2[HISTORY_DAILY_POINTS]   = {0};
+    float    sumTemp[HISTORY_DAILY_POINTS]  = {0.0f};
+    float    sumHumid[HISTORY_DAILY_POINTS] = {0.0f};
+    int      cnt[HISTORY_DAILY_POINTS]      = {0};
 
     struct tm tm_now = {0};
     tm_now.tm_year  = now->date.year - 1900;
@@ -179,18 +199,11 @@ void loadDailyHistoryFromSD(m5::rtc_datetime_t *now) {
     tm_now.tm_min   = now->time.minutes;
     tm_now.tm_sec   = 0;
     tm_now.tm_isdst = -1;
+    time_t t_now = mktime(&tm_now);
 
-    time_t t_now   = mktime(&tm_now);
-    time_t t_start = t_now - (24 * 3600);
-
-    // 前日・今日の2ファイルを読む
-    uint32_t dailySumCO2[HISTORY_DAILY_POINTS]  = {0};
-    float    dailySumTemp[HISTORY_DAILY_POINTS]  = {0};
-    float    dailySumHumid[HISTORY_DAILY_POINTS] = {0};
-    int      dailyCount[HISTORY_DAILY_POINTS]    = {0};
-
+    // 前日 (d=-1) と当日 (d=0) の2ファイルを読む
     for (int d = -1; d <= 0; d++) {
-        time_t t_day = t_now + (d * 24 * 3600);
+        time_t t_day = t_now + (long)(d * 24 * 3600);
         struct tm *tm_day = localtime(&t_day);
         char logFileName[24];
         strftime(logFileName, sizeof(logFileName), "/%Y%m%d.csv", tm_day);
@@ -211,44 +224,37 @@ void loadDailyHistoryFromSD(m5::rtc_datetime_t *now) {
                        &year, &month, &day, &hour, &min, &sec,
                        &co2, &temp, &humid) < 9) continue;
 
-            struct tm tm_line = {0};
-            tm_line.tm_year  = year - 1900;
-            tm_line.tm_mon   = month - 1;
-            tm_line.tm_mday  = day;
-            tm_line.tm_hour  = hour;
-            tm_line.tm_min   = min;
-            tm_line.tm_sec   = sec;
-            tm_line.tm_isdst = -1;
-            time_t t_log = mktime(&tm_line);
+            // RTモードと同一の絶対バケツ番号
+            int abs_bkt = (hour * 60 + min) / 6;
 
-            if (t_log < t_start || t_log > t_now) continue;
+            // 24Hウィンドウへの採用判定:
+            //   前日 (d=-1): abs_bkt > cur_bkt_now のみ (24H前〜当日0時前が対象)
+            //   当日 (d= 0): abs_bkt <= cur_bkt_now のみ (当日0時〜現在が対象)
+            bool valid = (d == -1) ? (abs_bkt > cur_bkt_now)
+                                   : (abs_bkt <= cur_bkt_now);
+            if (!valid) continue;
 
-            long diff   = (long)(t_log - t_start);
-            int bucket  = (int)(diff / (6 * 60));
-            if (bucket >= 0 && bucket < HISTORY_DAILY_POINTS) {
-                dailySumCO2[bucket]   += co2;
-                dailySumTemp[bucket]  += temp;
-                dailySumHumid[bucket] += humid;
-                dailyCount[bucket]++;
-            }
+            sumCO2[abs_bkt]   += (uint32_t)co2;
+            sumTemp[abs_bkt]  += temp;
+            sumHumid[abs_bkt] += humid;
+            cnt[abs_bkt]++;
         }
         file.close();
     }
 
+    // 各絶対バケツに平均値を書き込む
     for (int i = 0; i < HISTORY_DAILY_POINTS; i++) {
-        if (dailyCount[i] > 0) {
+        if (cnt[i] > 0) {
             setDailyHistoryData(i,
-                dailySumCO2[i]  / dailyCount[i],
-                dailySumTemp[i]  / dailyCount[i],
-                dailySumHumid[i] / dailyCount[i]);
+                (uint16_t)(sumCO2[i] / cnt[i]),
+                sumTemp[i]  / cnt[i],
+                sumHumid[i] / cnt[i]);
         }
     }
 
-    // SDロード後: リアルタイムモードのポインタを現在時刻バケツに同期させる。
-    // これにより次回 updateDailyHistoryInRealTime() 呼び出し時の diff 爆発を防ぎ、
-    // スリープ復帰後にグラフが全消去される不具合を修正する。
-    int cur_bkt = (now->time.hours * 60 + now->time.minutes) / 6;
-    initDailyHistoryRTMode(cur_bkt);
+    // バッファポインタをRTモードと同期 (座標系が一致しているので dailyHistIdx も正しく設定される)
+    initDailyHistoryRTMode(cur_bkt_now);
 
-    LOG_I("SD", "History (1D) loaded.");
+    LOG_I("SD", "History (1D) loaded. cur_bkt_now=%d", cur_bkt_now);
 }
+
