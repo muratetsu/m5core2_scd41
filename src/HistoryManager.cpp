@@ -127,8 +127,20 @@ void updateDailyHistoryInRealTime(uint16_t co2, float temp, float humid) {
         dailyCount_rt++;
     } else {
         // バケツが変わった: 空バケツを埋めてインデックスを進める
+        // diff は常に 0〜HISTORY_DAILY_POINTS-1 の範囲 (モジュロ演算の性質上)
         int diff = (cur_bkt - _rtModeCurBucket + HISTORY_DAILY_POINTS) % HISTORY_DAILY_POINTS;
-        if (diff > HISTORY_DAILY_POINTS) diff = HISTORY_DAILY_POINTS;
+
+        // diff が全バッファサイズに達する場合 (長期スリープ等) はバッファ全消去を防ぐ
+        // initDailyHistoryRTMode() が正しく呼ばれていれば通常 diff は 1〜2
+        if (diff >= HISTORY_DAILY_POINTS) {
+            LOG_W("History", "Daily RT: diff too large (%d), skipping zero-fill", diff);
+            _rtModeCurBucket = cur_bkt;
+            dailySumCO2_rt   = co2;
+            dailySumTemp_rt  = temp;
+            dailySumHumid_rt = humid;
+            dailyCount_rt    = 1;
+            return;
+        }
 
         for (int step = 0; step < diff; step++) {
             dailyHistCO2[dailyHistIdx]   = 0;
@@ -151,4 +163,28 @@ void updateDailyHistoryInRealTime(uint16_t co2, float temp, float humid) {
         dailyHistTemp[latestIdx]  = dailySumTemp_rt  / dailyCount_rt;
         dailyHistHumid[latestIdx] = dailySumHumid_rt / dailyCount_rt;
     }
+}
+
+// ============================================================
+// 24H バッファのリアルタイムモード初期化
+// SDから履歴をロードした直後に呼ぶ。
+// _rtModeCurBucket と dailyHistIdx を現在時刻の 6分バケツ位置に合わせることで、
+// 次回 updateDailyHistoryInRealTime() 呼び出し時の diff 爆発を防ぐ。
+// cur_bkt: 現在時刻から計算した 6分バケツ番号 (0〜239)
+// ============================================================
+void initDailyHistoryRTMode(int cur_bkt) {
+    // バッファ配置: SDロード後は setDailyHistoryData(i, ...) により
+    // dailyHistCO2[i] がバケツ i のデータを保持している。
+    // 循環バッファの「次書き込み位置」は cur_bkt の次のスロット。
+    _rtModeCurBucket = cur_bkt;
+    dailyHistIdx     = (cur_bkt + 1) % HISTORY_DAILY_POINTS;
+
+    // 集計中間値をリセット
+    dailySumCO2_rt   = 0;
+    dailySumTemp_rt  = 0.0f;
+    dailySumHumid_rt = 0.0f;
+    dailyCount_rt    = 0;
+
+    LOG_I("History", "Daily RT mode initialized: cur_bkt=%d, dailyHistIdx=%d",
+          cur_bkt, dailyHistIdx);
 }

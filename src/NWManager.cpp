@@ -228,9 +228,9 @@ namespace NWManager {
         struct timeval tv = { t_rtc, 0 };
         settimeofday(&tv, NULL);
         
-        LOG_D("NTP", "System time synchronized with RTC: %04d/%02d/%02d %02d:%02d:%02d",
-              rtcNow.date.year, rtcNow.date.month, rtcNow.date.date,
-              rtcNow.time.hours, rtcNow.time.minutes, rtcNow.time.seconds);
+        // LOG_D("NTP", "System time synchronized with RTC: %04d/%02d/%02d %02d:%02d:%02d",
+        //       rtcNow.date.year, rtcNow.date.month, rtcNow.date.date,
+        //       rtcNow.time.hours, rtcNow.time.minutes, rtcNow.time.seconds);
     }
 
 } // namespace NWManager

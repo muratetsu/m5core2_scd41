@@ -38,4 +38,8 @@ void resetHistory();
 void resetDailyHistory();
 void setDailyHistoryData(int idx, uint16_t co2, float temp, float humid);
 
+// SDロード後にリアルタイムモードのポインタを現在時刻バケツに同期する
+// cur_bkt: 現在時刻から計算した 6分バケツ番号 (= (hour*60 + min) / 6)
+void initDailyHistoryRTMode(int cur_bkt);
+
 #endif // HISTORYMANAGER_H

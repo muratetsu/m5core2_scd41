@@ -243,5 +243,12 @@ void loadDailyHistoryFromSD(m5::rtc_datetime_t *now) {
                 dailySumHumid[i] / dailyCount[i]);
         }
     }
+
+    // SDロード後: リアルタイムモードのポインタを現在時刻バケツに同期させる。
+    // これにより次回 updateDailyHistoryInRealTime() 呼び出し時の diff 爆発を防ぎ、
+    // スリープ復帰後にグラフが全消去される不具合を修正する。
+    int cur_bkt = (now->time.hours * 60 + now->time.minutes) / 6;
+    initDailyHistoryRTMode(cur_bkt);
+
     LOG_I("SD", "History (1D) loaded.");
 }
