@@ -1,5 +1,6 @@
 #include "Screen_Test.h"
 #include "Logger.h"
+#include "SDManager.h"
 #include <WiFi.h>
 #include <esp_system.h>
 #include "SensorManager.h"
@@ -42,6 +43,25 @@ static void btn_clear_nvs_cb(lv_event_t *e) {
     // Reboot after short delay using LVGL timer or async
     delay(1000); 
     ESP.restart();
+  }
+}
+
+static lv_obj_t *btn_sdlog = NULL;
+static lv_obj_t *lbl_sdlog = NULL;
+
+static void btn_toggle_sdlog_cb(lv_event_t *e) {
+  if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+    bool current = isSDSysLogEnabled();
+    bool nextState = !current;
+    setSDSysLogEnabled(nextState);
+    LOG_I("Test", "SD SysLog toggled to: %s", nextState ? "ON" : "OFF");
+
+    if (lbl_sdlog) {
+      lv_label_set_text_fmt(lbl_sdlog, "SD Log: %s", nextState ? "ON" : "OFF");
+    }
+    if (btn_sdlog) {
+      lv_obj_set_style_bg_color(btn_sdlog, nextState ? lv_color_make(30, 140, 60) : lv_color_make(100, 100, 100), 0);
+    }
   }
 }
 
@@ -186,29 +206,42 @@ void createTestUI(lv_obj_t *scr) {
 
   // --- Clear NVS Button ---
   lv_obj_t *btn_clear = lv_btn_create(scr);
-  lv_obj_set_size(btn_clear, 140, 35);
-  lv_obj_align(btn_clear, LV_ALIGN_TOP_LEFT, 15, 185);
+  lv_obj_set_size(btn_clear, 90, 35);
+  lv_obj_align(btn_clear, LV_ALIGN_TOP_LEFT, 10, 185);
   lv_obj_set_style_bg_color(btn_clear, lv_color_make(180, 40, 40), 0);
   lv_obj_set_style_bg_color(btn_clear, lv_color_make(220, 60, 60), LV_STATE_PRESSED);
   lv_obj_add_event_cb(btn_clear, btn_clear_nvs_cb, LV_EVENT_CLICKED, NULL);
 
   lv_obj_t *lbl_clear = lv_label_create(btn_clear);
   lv_obj_set_style_text_font(lbl_clear, &lv_font_montserrat_12, 0);
-  lv_label_set_text(lbl_clear, LV_SYMBOL_TRASH " WiFi NVS");
+  lv_label_set_text(lbl_clear, LV_SYMBOL_TRASH " NVS");
   lv_obj_center(lbl_clear);
 
   // --- Clear Touch Calibration Button ---
   lv_obj_t *btn_touch = lv_btn_create(scr);
-  lv_obj_set_size(btn_touch, 140, 35);
-  lv_obj_align(btn_touch, LV_ALIGN_TOP_RIGHT, -15, 185);
+  lv_obj_set_size(btn_touch, 100, 35);
+  lv_obj_align(btn_touch, LV_ALIGN_TOP_LEFT, 110, 185);
   lv_obj_set_style_bg_color(btn_touch, lv_color_make(140, 80, 20), 0);
   lv_obj_set_style_bg_color(btn_touch, lv_color_make(180, 110, 30), LV_STATE_PRESSED);
   lv_obj_add_event_cb(btn_touch, btn_clear_touch_cb, LV_EVENT_CLICKED, NULL);
 
   lv_obj_t *lbl_touch = lv_label_create(btn_touch);
   lv_obj_set_style_text_font(lbl_touch, &lv_font_montserrat_12, 0);
-  lv_label_set_text(lbl_touch, LV_SYMBOL_REFRESH " Recalibrate");
+  lv_label_set_text(lbl_touch, LV_SYMBOL_REFRESH " Calib");
   lv_obj_center(lbl_touch);
+
+  // --- SD SysLog Toggle Button ---
+  bool sdLogEnabled = isSDSysLogEnabled();
+  btn_sdlog = lv_btn_create(scr);
+  lv_obj_set_size(btn_sdlog, 90, 35);
+  lv_obj_align(btn_sdlog, LV_ALIGN_TOP_RIGHT, -10, 185);
+  lv_obj_set_style_bg_color(btn_sdlog, sdLogEnabled ? lv_color_make(30, 140, 60) : lv_color_make(100, 100, 100), 0);
+  lv_obj_add_event_cb(btn_sdlog, btn_toggle_sdlog_cb, LV_EVENT_CLICKED, NULL);
+
+  lbl_sdlog = lv_label_create(btn_sdlog);
+  lv_obj_set_style_text_font(lbl_sdlog, &lv_font_montserrat_12, 0);
+  lv_label_set_text_fmt(lbl_sdlog, "SD Log: %s", sdLogEnabled ? "ON" : "OFF");
+  lv_obj_center(lbl_sdlog);
 
   // Initialize values immediately
   test_timer_cb(NULL);

@@ -7,6 +7,7 @@
 #include "SDManager.h"
 #include "HistoryManager.h"
 #include "Logger.h"
+#include "Globals.h"
 #include <SD.h>
 #include <FS.h>
 
@@ -256,5 +257,120 @@ void loadDailyHistoryFromSD(m5::rtc_datetime_t *now) {
     initDailyHistoryRTMode(cur_bkt_now);
 
     LOG_I("SD", "History (1D) loaded. cur_bkt_now=%d", cur_bkt_now);
+}
+
+// ============================================================
+// システムログのSD書き込み & ローテーション管理
+// ============================================================
+static bool s_sdSysLogEnabled = true;
+static bool s_sdSysLogPreferencesLoaded = false;
+static bool s_inWriteSysLog = false; // 再帰呼び出し防止フラグ
+
+bool isSDSysLogEnabled() {
+    if (!s_sdSysLogPreferencesLoaded) {
+        prefs.begin("sys_log", true);
+        s_sdSysLogEnabled = prefs.getBool("enabled", true);
+        prefs.end();
+        s_sdSysLogPreferencesLoaded = true;
+    }
+    return s_sdSysLogEnabled;
+}
+
+void setSDSysLogEnabled(bool enabled) {
+    s_sdSysLogEnabled = enabled;
+    s_sdSysLogPreferencesLoaded = true;
+    prefs.begin("sys_log", false);
+    prefs.putBool("enabled", enabled);
+    prefs.end();
+}
+
+void writeSysLogToSD(const char *level, const char *tag, const char *message) {
+    if (!isSDSysLogEnabled()) return;
+    if (s_inWriteSysLog) return;
+    s_inWriteSysLog = true;
+
+    m5::rtc_datetime_t now = M5.Rtc.getDateTime();
+    char logFileName[32];
+    snprintf(logFileName, sizeof(logFileName), "/sys_%04d%02d%02d.log",
+             now.date.year, now.date.month, now.date.date);
+
+    File file = SD.open(logFileName, FILE_APPEND);
+    if (file) {
+        file.printf("[%04d-%02d-%02d %02d:%02d:%02d][%s][%s] %s\n",
+                    now.date.year, now.date.month, now.date.date,
+                    now.time.hours, now.time.minutes, now.time.seconds,
+                    level, tag, message);
+        file.flush();
+        file.close();
+    }
+    s_inWriteSysLog = false;
+}
+
+void writeSysLogFormatted(const char *level, const char *tag, const char *fmt, ...) {
+    if (!isSDSysLogEnabled()) return;
+    if (s_inWriteSysLog) return;
+
+    char buf[256];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    writeSysLogToSD(level, tag, buf);
+}
+
+// 7日以上経過した /sys_YYYYMMDD.log ファイルの自動削除
+void cleanOldSysLogs(m5::rtc_datetime_t *now) {
+    File root = SD.open("/");
+    if (!root || !root.isDirectory()) return;
+
+    struct tm tm_now = {0};
+    tm_now.tm_year  = now->date.year - 1900;
+    tm_now.tm_mon   = now->date.month - 1;
+    tm_now.tm_mday  = now->date.date;
+    tm_now.tm_hour  = 0;
+    tm_now.tm_min   = 0;
+    tm_now.tm_sec   = 0;
+    tm_now.tm_isdst = -1;
+    time_t t_now = mktime(&tm_now);
+
+    File file = root.openNextFile();
+    while (file) {
+        String fname = String(file.name());
+        // fname は "sys_20260801.log" または "/sys_20260801.log"
+        int idx = fname.lastIndexOf("sys_");
+        if (idx != -1 && fname.endsWith(".log") && fname.length() >= idx + 12) {
+            String dateStr = fname.substring(idx + 4, idx + 12);
+            if (dateStr.length() == 8) {
+                int year = dateStr.substring(0, 4).toInt();
+                int month = dateStr.substring(4, 6).toInt();
+                int day = dateStr.substring(6, 8).toInt();
+
+                struct tm tm_file = {0};
+                tm_file.tm_year  = year - 1900;
+                tm_file.tm_mon   = month - 1;
+                tm_file.tm_mday  = day;
+                tm_file.tm_isdst = -1;
+                time_t t_file = mktime(&tm_file);
+
+                double diffSec = difftime(t_now, t_file);
+                // 7日 (7 * 24 * 3600 秒) 以上前のログを削除
+                if (diffSec >= (7 * 24 * 3600)) {
+                    file.close();
+                    String fullPath = fname.startsWith("/") ? fname : "/" + fname;
+                    if (SD.remove(fullPath)) {
+                        LOG_I("SD", "Removed old syslog file: %s", fullPath.c_str());
+                    } else {
+                        LOG_E("SD", "Failed to remove syslog file: %s", fullPath.c_str());
+                    }
+                    file = root.openNextFile();
+                    continue;
+                }
+            }
+        }
+        file.close();
+        file = root.openNextFile();
+    }
+    root.close();
 }
 

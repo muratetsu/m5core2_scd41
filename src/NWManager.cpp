@@ -117,8 +117,8 @@ namespace NWManager {
     }
 
     static void timeSyncCallback(struct timeval *tv) {
-        LOG_I("NTP", "SNTP sync notification callback triggered.");
-        
+        // NOTE: Executed inside lwIP / SNTP timer task context with small stack.
+        // Direct Serial/SD logging here can trigger stack overflow.
         time_t now = tv->tv_sec;
         struct tm timeInfo;
         localtime_r(&now, &timeInfo);
@@ -135,10 +135,6 @@ namespace NWManager {
         rtcData.time.seconds = timeInfo.tm_sec;
         M5.Rtc.setDateTime(rtcData);
         
-        LOG_I("NTP", "RTC updated from NTP callback: %04d/%02d/%02d %02d:%02d:%02d",
-              rtcData.date.year, rtcData.date.month, rtcData.date.date,
-              rtcData.time.hours, rtcData.time.minutes, rtcData.time.seconds);
-              
         struct tm tm_before = {0};
         tm_before.tm_year  = rtcBefore.date.year - 1900;
         tm_before.tm_mon   = rtcBefore.date.month - 1;
@@ -152,9 +148,6 @@ namespace NWManager {
         long diff = (long)difftime(now, t_before);
         if (labs(diff) > 3600) { // 1時間以上の差
             state.needSDHistoryReload = true;
-            LOG_I("NTP", "Time diff > 1h (%ld sec). Scheduled history reload from SD.", diff);
-        } else {
-            LOG_I("NTP", "Time diff small (%ld sec). Skipping SD reload.", diff);
         }
         
         state.ntpUpdated = true;
