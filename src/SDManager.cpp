@@ -360,6 +360,7 @@ void writeSysLogFormatted(const char *level, const char *tag, const char *fmt, .
 
 // 7日以上経過した /sys_YYYYMMDD.log ファイルの自動削除
 void cleanOldSysLogs(m5::rtc_datetime_t *now) {
+    LOG_I("SD", "Clean old syslogs");
     File root = SD.open("/");
     if (!root || !root.isDirectory()) return;
 

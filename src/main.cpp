@@ -252,7 +252,6 @@ void setup() {
     m5::rtc_datetime_t now = M5.Rtc.getDateTime();
     loadHistoryFromSD(&now);
     loadDailyHistoryFromSD(&now);
-    cleanOldSysLogs(&now);
 
     // 8. Establish initial WiFi / USB connection state
     wasVbusConnected = battery.isVbusConnected();
