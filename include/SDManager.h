@@ -33,4 +33,7 @@ void cleanOldSysLogs(m5::rtc_datetime_t *now);
 bool isSDSysLogEnabled();
 void setSDSysLogEnabled(bool enabled);
 
+// バッファに溜まったシステムログをSDカードへフラッシュ書き込みする
+void flushSysLogBuffer();
+
 #endif // SDMANAGER_H

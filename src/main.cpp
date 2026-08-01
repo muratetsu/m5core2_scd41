@@ -343,8 +343,16 @@ void loop() {
     // 6. Aggregate data once per minute
     processMinuteAggregation();
 
+    // 6.5 Flush system log buffer to SD card periodically (every 5 seconds)
+    static uint32_t lastLogFlush = 0;
+    if (millis() - lastLogFlush >= 5000) {
+        lastLogFlush = millis();
+        flushSysLogBuffer();
+    }
+
     // 7. Light Sleep Cycle (only when USB is disconnected, LCD is off, and WiFi is idle)
     if (!isVbus && !battery.lcdOn && !state.wifiConnecting && WiFi.scanComplete() != WIFI_SCAN_RUNNING && WiFi.status() != WL_CONNECTED) {
+        flushSysLogBuffer(); // Flush all pending log entries before sleep
         M5.Power.lightSleep(1000000); // sleep 1s
     } else {
         delay(5);

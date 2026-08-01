@@ -284,10 +284,21 @@ void setSDSysLogEnabled(bool enabled) {
     prefs.end();
 }
 
-void writeSysLogToSD(const char *level, const char *tag, const char *message) {
+#define SYS_LOG_BUFFER_SIZE 4096
+static char s_sysLogBuffer[SYS_LOG_BUFFER_SIZE];
+static size_t s_sysLogHead = 0;
+static portMUX_TYPE s_logMux = portMUX_INITIALIZER_UNLOCKED;
+
+void flushSysLogBuffer() {
     if (!isSDSysLogEnabled()) return;
-    if (s_inWriteSysLog) return;
-    s_inWriteSysLog = true;
+    if (s_sysLogHead == 0) return;
+
+    portENTER_CRITICAL(&s_logMux);
+    char tempBuf[SYS_LOG_BUFFER_SIZE];
+    size_t copyLen = s_sysLogHead;
+    memcpy(tempBuf, s_sysLogBuffer, copyLen);
+    s_sysLogHead = 0;
+    portEXIT_CRITICAL(&s_logMux);
 
     m5::rtc_datetime_t now = M5.Rtc.getDateTime();
     char logFileName[32];
@@ -296,12 +307,40 @@ void writeSysLogToSD(const char *level, const char *tag, const char *message) {
 
     File file = SD.open(logFileName, FILE_APPEND);
     if (file) {
-        file.printf("[%04d-%02d-%02d %02d:%02d:%02d][%s][%s] %s\n",
-                    now.date.year, now.date.month, now.date.date,
-                    now.time.hours, now.time.minutes, now.time.seconds,
-                    level, tag, message);
+        file.write((const uint8_t *)tempBuf, copyLen);
         file.flush();
         file.close();
+    }
+}
+
+void writeSysLogToSD(const char *level, const char *tag, const char *message) {
+    if (!isSDSysLogEnabled()) return;
+    if (s_inWriteSysLog) return;
+    s_inWriteSysLog = true;
+
+    m5::rtc_datetime_t now = M5.Rtc.getDateTime();
+    char line[300];
+    int len = snprintf(line, sizeof(line), "[%04d-%02d-%02d %02d:%02d:%02d][%s][%s] %s\n",
+                       now.date.year, now.date.month, now.date.date,
+                       now.time.hours, now.time.minutes, now.time.seconds,
+                       level, tag, message);
+
+    if (len > 0) {
+        portENTER_CRITICAL(&s_logMux);
+        if (s_sysLogHead + len < SYS_LOG_BUFFER_SIZE) {
+            memcpy(s_sysLogBuffer + s_sysLogHead, line, len);
+            s_sysLogHead += len;
+        } else {
+            // バッファフル時は溢れる前に自動フラッシュ
+            portEXIT_CRITICAL(&s_logMux);
+            flushSysLogBuffer();
+            portENTER_CRITICAL(&s_logMux);
+            if (s_sysLogHead + len < SYS_LOG_BUFFER_SIZE) {
+                memcpy(s_sysLogBuffer + s_sysLogHead, line, len);
+                s_sysLogHead += len;
+            }
+        }
+        portEXIT_CRITICAL(&s_logMux);
     }
     s_inWriteSysLog = false;
 }
